@@ -39,6 +39,9 @@ namespace DocChat.Tests
             Assert.NotEmpty(retrieved);
             Assert.Equal("hello qdrant", retrieved[0].Payload["key"].StringValue);
             Assert.Equal(42, retrieved[0].Payload["number"].IntegerValue);
+
+            // Cleanup: delete the collection
+            await client.DeleteCollectionAsync(collectionName);
         }
     }
 }
