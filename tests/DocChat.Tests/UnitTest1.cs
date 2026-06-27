@@ -8,7 +8,7 @@ namespace DocChat.Tests
         [Fact]
         public async Task QdrantWriteReadExample()
         {
-            var client = new QdrantClient("localhost", 6333);
+            var client = new QdrantClient("localhost", 6334);
 
             const string collectionName = "test_collection";
 
