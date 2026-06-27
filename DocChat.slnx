@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/deploy/" />
+  <Folder Name="/src/">
+    <Project Path="src/DocChat.Api/DocChat.Api.csproj" />
+  </Folder>
+</Solution>
