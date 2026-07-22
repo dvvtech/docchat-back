@@ -40,6 +40,7 @@ namespace DocChat.Api.AppStart
             _builder.Services.AddSingleton<LlmDocumentChunker>();
             _builder.Services.AddSingleton<DocumentEmbeddingService>();
             _builder.Services.AddSingleton<QdrantDocumentStore>();
+            _builder.Services.AddSingleton<DocumentSearchService>();
             _builder.Services.AddScoped<DocumentIngestionService>();
         }
     }

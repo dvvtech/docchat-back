@@ -8,12 +8,16 @@ namespace DocChat.Api.Controllers
     [Route("documents")]
     public sealed class DocumentsController : ControllerBase
     {
-        private readonly DocumentIngestionService _documentIngestionService;
+    private readonly DocumentIngestionService _documentIngestionService;
+    private readonly DocumentSearchService _documentSearchService;
 
-        public DocumentsController(DocumentIngestionService documentIngestionService)
-        {
-            _documentIngestionService = documentIngestionService;
-        }
+    public DocumentsController(
+        DocumentIngestionService documentIngestionService,
+        DocumentSearchService documentSearchService)
+    {
+        _documentIngestionService = documentIngestionService;
+        _documentSearchService = documentSearchService;
+    }
 
         [HttpPost("upload")]
         [Consumes("multipart/form-data")]
@@ -36,6 +40,29 @@ namespace DocChat.Api.Controllers
             catch (NotSupportedException ex)
             {
                 return BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("search")]
+        [ProducesResponseType(typeof(SearchResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<SearchResponse>> Search(
+            [FromBody] SearchRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(request?.Query))
+            {
+                return BadRequest(new { error = "Query is required." });
+            }
+
+            try
+            {
+                var response = await _documentSearchService.SearchAsync(request, cancellationToken);
+                return Ok(response);
             }
             catch (InvalidOperationException ex)
             {

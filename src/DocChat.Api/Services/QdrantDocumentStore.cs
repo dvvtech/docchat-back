@@ -50,6 +50,28 @@ namespace DocChat.Api.Services
             await _qdrantClient.UpsertAsync(_ragConfig.CollectionName, points, cancellationToken: ct);
         }
 
+        public async Task<IReadOnlyList<SearchResult>> SearchAsync(
+            float[] queryVector,
+            int topK,
+            CancellationToken ct)
+        {
+            await EnsureCollectionAsync(ct);
+
+            var results = await _qdrantClient.SearchAsync(
+                _ragConfig.CollectionName,
+                queryVector,
+                limit: (ulong)topK,
+                cancellationToken: ct);
+
+            return results.Select(point => new SearchResult(
+                point.Payload["documentId"].StringValue,
+                point.Payload["fileName"].StringValue,
+                (int)point.Payload["chunkIndex"].IntegerValue,
+                point.Payload["text"].StringValue,
+                point.Score
+            )).ToArray();
+        }
+
         private async Task EnsureCollectionAsync(CancellationToken ct)
         {
             if (_collectionReady) return;
@@ -79,4 +101,11 @@ namespace DocChat.Api.Services
             }
         }
     }
+
+    public sealed record SearchResult(
+        string DocumentId,
+        string FileName,
+        int ChunkIndex,
+        string Text,
+        double Score);
 }
