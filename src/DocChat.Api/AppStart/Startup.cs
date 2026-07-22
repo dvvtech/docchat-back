@@ -29,11 +29,18 @@ namespace DocChat.Api.AppStart
         {
             _builder.Services.Configure<AiConfig>(_builder.Configuration.GetSection(AiConfig.SectionName));
             _builder.Services.Configure<ProxyConfig>(_builder.Configuration.GetSection(ProxyConfig.SectionName));
+            _builder.Services.Configure<RagConfig>(_builder.Configuration.GetSection(RagConfig.SectionName));
         }
 
         private void ConfigureServices()
         {
+            _builder.Services.AddSingleton<OpenAiClientFactory>();
             _builder.Services.AddSingleton<AiAgentService>();
+            _builder.Services.AddSingleton<DocumentTextExtractor>();
+            _builder.Services.AddSingleton<LlmDocumentChunker>();
+            _builder.Services.AddSingleton<DocumentEmbeddingService>();
+            _builder.Services.AddSingleton<QdrantDocumentStore>();
+            _builder.Services.AddScoped<DocumentIngestionService>();
         }
     }
 }

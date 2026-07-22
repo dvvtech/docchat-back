@@ -1,0 +1,82 @@
+using DocChat.Api.Configuration;
+using Microsoft.Extensions.Options;
+using Qdrant.Client;
+using Qdrant.Client.Grpc;
+
+namespace DocChat.Api.Services
+{
+    public sealed class QdrantDocumentStore
+    {
+        private readonly RagConfig _ragConfig;
+        private readonly QdrantClient _qdrantClient;
+        private readonly SemaphoreSlim _collectionLock = new(1, 1);
+        private bool _collectionReady;
+
+        public QdrantDocumentStore(IOptions<RagConfig> ragConfig)
+        {
+            _ragConfig = ragConfig.Value;
+            _qdrantClient = new QdrantClient(_ragConfig.QdrantHost, _ragConfig.QdrantPort);
+        }
+
+        public async Task SaveChunksAsync(
+            string documentId,
+            string fileName,
+            IReadOnlyList<string> chunks,
+            IReadOnlyList<float[]> embeddings,
+            CancellationToken ct)
+        {
+            if (chunks.Count != embeddings.Count)
+            {
+                throw new InvalidOperationException("Chunks and embeddings count mismatch.");
+            }
+
+            await EnsureCollectionAsync(ct);
+
+            var points = chunks.Select((chunk, index) => new PointStruct
+            {
+                Id = new PointId { Uuid = Guid.NewGuid().ToString() },
+                Vectors = embeddings[index],
+                Payload =
+                {
+                    ["documentId"] = documentId,
+                    ["fileName"] = fileName,
+                    ["chunkIndex"] = index,
+                    ["text"] = chunk,
+                    ["characterCount"] = chunk.Length,
+                    ["uploadedAtUtc"] = DateTimeOffset.UtcNow.ToString("O")
+                }
+            }).ToArray();
+
+            await _qdrantClient.UpsertAsync(_ragConfig.CollectionName, points, cancellationToken: ct);
+        }
+
+        private async Task EnsureCollectionAsync(CancellationToken ct)
+        {
+            if (_collectionReady) return;
+
+            await _collectionLock.WaitAsync(ct);
+            try
+            {
+                if (_collectionReady) return;
+
+                if (!await _qdrantClient.CollectionExistsAsync(_ragConfig.CollectionName, cancellationToken: ct))
+                {
+                    await _qdrantClient.CreateCollectionAsync(
+                        _ragConfig.CollectionName,
+                        new VectorParams
+                        {
+                            Size = _ragConfig.EmbeddingVectorSize,
+                            Distance = Distance.Cosine
+                        },
+                        cancellationToken: ct);
+                }
+
+                _collectionReady = true;
+            }
+            finally
+            {
+                _collectionLock.Release();
+            }
+        }
+    }
+}
