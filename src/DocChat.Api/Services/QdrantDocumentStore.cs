@@ -50,6 +50,28 @@ namespace DocChat.Api.Services
             await _qdrantClient.UpsertAsync(_ragConfig.CollectionName, points, cancellationToken: ct);
         }
 
+        public async Task DeleteDocumentAsync(string documentId, CancellationToken ct)
+        {
+            await EnsureCollectionAsync(ct);
+
+            var filter = new Filter
+            {
+                Must =
+                {
+                    new Condition
+                    {
+                        Field = new FieldCondition
+                        {
+                            Key = "documentId",
+                            Match = new Match { Keyword = documentId }
+                        }
+                    }
+                }
+            };
+
+            await _qdrantClient.DeleteAsync(_ragConfig.CollectionName, filter, cancellationToken: ct);
+        }
+
         public async Task<IReadOnlyList<SearchResult>> SearchAsync(
             float[] queryVector,
             int topK,

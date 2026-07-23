@@ -10,13 +10,16 @@ namespace DocChat.Api.Controllers
     {
     private readonly DocumentIngestionService _documentIngestionService;
     private readonly DocumentSearchService _documentSearchService;
+    private readonly QdrantDocumentStore _documentStore;
 
     public DocumentsController(
         DocumentIngestionService documentIngestionService,
-        DocumentSearchService documentSearchService)
+        DocumentSearchService documentSearchService,
+        QdrantDocumentStore documentStore)
     {
         _documentIngestionService = documentIngestionService;
         _documentSearchService = documentSearchService;
+        _documentStore = documentStore;
     }
 
         [HttpPost("upload")]
@@ -63,6 +66,29 @@ namespace DocChat.Api.Controllers
             {
                 var response = await _documentSearchService.SearchAsync(request, cancellationToken);
                 return Ok(response);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpDelete("{documentId}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult> Delete(
+            string documentId,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(documentId))
+            {
+                return BadRequest(new { error = "Document ID is required." });
+            }
+
+            try
+            {
+                await _documentStore.DeleteDocumentAsync(documentId, cancellationToken);
+                return Ok(new { deleted = true });
             }
             catch (InvalidOperationException ex)
             {
