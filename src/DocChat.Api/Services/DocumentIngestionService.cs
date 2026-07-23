@@ -21,14 +21,17 @@ namespace DocChat.Api.Services
             _documentStore = documentStore;
         }
 
-        public async Task<DocumentUploadResponse> IngestAsync(IFormFile file, CancellationToken ct)
+        public async Task<DocumentUploadResponse> IngestAsync(IFormFile file, string documentId, CancellationToken ct)
         {
             if (file.Length == 0)
             {
                 throw new InvalidOperationException("Uploaded file is empty.");
             }
 
-            var documentId = Guid.NewGuid().ToString();
+            if (string.IsNullOrWhiteSpace(documentId))
+            {
+                throw new InvalidOperationException("Document ID is required.");
+            }
             var text = await _textExtractor.ExtractTextAsync(file, ct);
             if (string.IsNullOrWhiteSpace(text))
             {

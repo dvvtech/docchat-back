@@ -28,6 +28,7 @@ namespace DocChat.Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<DocumentUploadResponse>> Upload(
             [FromForm] IFormFile? file,
+            [FromForm] string? documentId,
             CancellationToken cancellationToken)
         {
             if (file is null)
@@ -35,9 +36,14 @@ namespace DocChat.Api.Controllers
                 return BadRequest(new { error = "File is required." });
             }
 
+            if (string.IsNullOrWhiteSpace(documentId))
+            {
+                return BadRequest(new { error = "Document ID is required." });
+            }
+
             try
             {
-                var response = await _documentIngestionService.IngestAsync(file, cancellationToken);
+                var response = await _documentIngestionService.IngestAsync(file, documentId, cancellationToken);
                 return Ok(response);
             }
             catch (NotSupportedException ex)
