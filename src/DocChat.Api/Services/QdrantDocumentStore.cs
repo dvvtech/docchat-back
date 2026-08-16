@@ -106,6 +106,43 @@ namespace DocChat.Api.Services
                 .ToArray();
         }
 
+        public async Task<IReadOnlyList<SearchResult>> GetChunksAsync(
+            int maxChunks,
+            CancellationToken ct)
+        {
+            await EnsureCollectionAsync(ct);
+
+            var chunks = new List<SearchResult>(Math.Min(maxChunks, 1024));
+            PointId? offset = null;
+
+            while (chunks.Count < maxChunks)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var limit = (uint)Math.Min(256, maxChunks - chunks.Count);
+                var response = await _qdrantClient.ScrollAsync(
+                    _ragConfig.CollectionName,
+                    limit: limit,
+                    offset: offset,
+                    cancellationToken: ct);
+
+                if (response.Result.Count == 0)
+                {
+                    break;
+                }
+
+                chunks.AddRange(response.Result.Select(ToSearchResult));
+                offset = response.NextPageOffset;
+
+                if (offset is null)
+                {
+                    break;
+                }
+            }
+
+            return chunks;
+        }
+
         private static SearchResult ToSearchResult(ScoredPoint point)
         {
             return new SearchResult(
@@ -114,6 +151,17 @@ namespace DocChat.Api.Services
                 (int)point.Payload["chunkIndex"].IntegerValue,
                 point.Payload["text"].StringValue,
                 point.Score
+            );
+        }
+
+        private static SearchResult ToSearchResult(RetrievedPoint point)
+        {
+            return new SearchResult(
+                point.Payload["documentId"].StringValue,
+                point.Payload["fileName"].StringValue,
+                (int)point.Payload["chunkIndex"].IntegerValue,
+                point.Payload["text"].StringValue,
+                0d
             );
         }
 
