@@ -32,36 +32,55 @@ namespace DocChat.Api.Services
             {
                 throw new InvalidOperationException("Document ID is required.");
             }
-            var text = await _textExtractor.ExtractTextAsync(file, ct);
-            if (string.IsNullOrWhiteSpace(text))
+
+            var totalChars = 0;
+            var chunkIndexOffset = 0;
+            var allChunks = new List<DocumentChunkDto>();
+
+            await foreach (var textPage in _textExtractor.ExtractTextPagesAsync(file, ct))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                if (string.IsNullOrWhiteSpace(textPage))
+                    continue;
+
+                totalChars += textPage.Length;
+
+                var chunks = await _chunker.ChunkAsync(textPage, ct);
+                if (chunks.Count == 0)
+                    continue;
+
+                var embeddings = new List<float[]>(chunks.Count);
+                foreach (var chunk in chunks)
+                {
+                    embeddings.Add(await _embeddingService.GenerateEmbeddingAsync(chunk, ct));
+                }
+
+                await _documentStore.SaveChunksAsync(
+                    documentId, file.FileName, chunks, embeddings, ct, chunkIndexOffset);
+
+                for (var i = 0; i < chunks.Count; i++)
+                {
+                    allChunks.Add(new DocumentChunkDto(
+                        chunkIndexOffset + i,
+                        chunks[i].Length,
+                        chunks[i].Length <= 160 ? chunks[i] : chunks[i][..160]));
+                }
+
+                chunkIndexOffset += chunks.Count;
+            }
+
+            if (totalChars == 0)
             {
                 throw new InvalidOperationException("Document does not contain extractable text.");
             }
 
-            var chunks = await _chunker.ChunkAsync(text, ct);
-            if (chunks.Count == 0)
-            {
-                throw new InvalidOperationException("Document was not split into chunks.");
-            }
-
-            var embeddings = new List<float[]>(chunks.Count);
-            foreach (var chunk in chunks)
-            {
-                embeddings.Add(await _embeddingService.GenerateEmbeddingAsync(chunk, ct));
-            }
-
-            await _documentStore.SaveChunksAsync(documentId, file.FileName, chunks, embeddings, ct);
-
             return new DocumentUploadResponse(
                 documentId,
                 file.FileName,
-                text.Length,
-                chunks.Count,
-                chunks.Select((chunk, index) => new DocumentChunkDto(
-                    index,
-                    chunk.Length,
-                    chunk.Length <= 160 ? chunk : chunk[..160]))
-                .ToArray());
+                totalChars,
+                allChunks.Count,
+                allChunks);
         }
     }
 }

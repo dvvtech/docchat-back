@@ -1,7 +1,10 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using System.IO.Compression;
+using DocChat.Api.Configuration;
+using Microsoft.Extensions.Options;
 using UglyToad.PdfPig;
 
 namespace DocChat.Api.Services
@@ -16,7 +19,16 @@ namespace DocChat.Api.Services
             ".txt",
         };
 
-        public async Task<string> ExtractTextAsync(IFormFile file, CancellationToken ct)
+        private readonly RagConfig _ragConfig;
+
+        public DocumentTextExtractor(IOptions<RagConfig> ragConfig)
+        {
+            _ragConfig = ragConfig.Value;
+        }
+
+        public async IAsyncEnumerable<string> ExtractTextPagesAsync(
+            IFormFile file,
+            [EnumeratorCancellation] CancellationToken ct)
         {
             var extension = Path.GetExtension(file.FileName);
             if (!SupportedExtensions.Contains(extension))
@@ -25,89 +37,155 @@ namespace DocChat.Api.Services
             }
 
             await using var stream = file.OpenReadStream();
-            return extension.ToLowerInvariant() switch
+
+            switch (extension.ToLowerInvariant())
             {
-                ".pdf" => ExtractPdf(stream),
-                ".doc" => ExtractDoc(stream),
-                ".docx" => ExtractDocx(stream),
-                ".txt" => await ExtractTxtAsync(stream, ct),
-                _ => throw new NotSupportedException($"File extension '{extension}' is not supported.")
-            };
+                case ".pdf":
+                    foreach (var page in ExtractPdfPages(stream))
+                        yield return page;
+                    break;
+
+                case ".docx":
+                    foreach (var page in ExtractDocxPages(stream))
+                        yield return page;
+                    break;
+
+                case ".doc":
+                    foreach (var page in ExtractDocPages(stream))
+                        yield return page;
+                    break;
+
+                case ".txt":
+                    await foreach (var page in ExtractTxtPagesAsync(stream, ct))
+                        yield return page;
+                    break;
+            }
         }
 
-        private static string ExtractPdf(Stream stream)
+        private IEnumerable<string> ExtractPdfPages(Stream stream)
         {
             using var document = PdfDocument.Open(stream);
-            var builder = new StringBuilder();
+            var batch = new StringBuilder();
 
             foreach (var page in document.GetPages())
             {
-                builder.AppendLine(page.Text);
-                builder.AppendLine();
+                batch.AppendLine(page.Text);
+                batch.AppendLine();
+
+                if (batch.Length >= _ragConfig.MaxChunkingInputCharacters)
+                {
+                    yield return batch.ToString();
+                    batch.Clear();
+                }
             }
 
-            return builder.ToString();
+            if (batch.Length > 0)
+                yield return batch.ToString();
         }
 
-        private static string ExtractDoc(Stream stream)
-        {
-            using var memory = new MemoryStream();
-            stream.CopyTo(memory);
-            var bytes = memory.ToArray();
-
-            var unicodeText = ExtractPrintableRuns(Encoding.Unicode.GetString(bytes), minRunLength: 3);
-            var asciiText = ExtractPrintableRuns(Encoding.UTF8.GetString(bytes), minRunLength: 5);
-
-            return unicodeText.Length >= asciiText.Length ? unicodeText : asciiText;
-        }
-
-        private static string ExtractDocx(Stream stream)
+        private IEnumerable<string> ExtractDocxPages(Stream stream)
         {
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
-            var builder = new StringBuilder();
+            var batch = new StringBuilder();
 
             foreach (var entry in archive.Entries.Where(IsWordTextEntry))
             {
                 using var entryStream = entry.Open();
                 var xml = XDocument.Load(entryStream);
-                foreach (var paragraph in xml.Descendants().Where(element => element.Name.LocalName == "p"))
+
+                foreach (var paragraph in xml.Descendants().Where(e => e.Name.LocalName == "p"))
                 {
-                    var paragraphText = string.Concat(
+                    var text = string.Concat(
                         paragraph
                             .Descendants()
-                            .Where(element => element.Name.LocalName == "t")
-                            .Select(element => element.Value));
+                            .Where(e => e.Name.LocalName == "t")
+                            .Select(e => e.Value));
 
-                    if (!string.IsNullOrWhiteSpace(paragraphText))
+                    if (string.IsNullOrWhiteSpace(text))
+                        continue;
+
+                    batch.AppendLine(text);
+
+                    if (batch.Length >= _ragConfig.MaxChunkingInputCharacters)
                     {
-                        builder.AppendLine(paragraphText);
+                        yield return batch.ToString();
+                        batch.Clear();
                     }
                 }
             }
 
-            return builder.ToString();
+            if (batch.Length > 0)
+                yield return batch.ToString();
         }
 
-        private static async Task<string> ExtractTxtAsync(Stream stream, CancellationToken ct)
+        private IEnumerable<string> ExtractDocPages(Stream stream)
         {
-            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: false);
-            return await reader.ReadToEndAsync(ct);
+            using var memory = new MemoryStream();
+            stream.CopyTo(memory);
+            var bytes = memory.ToArray();
+
+            var unicodeRuns = Regex.Matches(
+                Encoding.Unicode.GetString(bytes), @"[\p{L}\p{N}\p{P}\p{Zs}\t\r\n]{3,}")
+                .Select(m => Regex.Replace(m.Value, @"[ \t]{2,}", " ").Trim())
+                .Where(v => !string.IsNullOrWhiteSpace(v));
+
+            var asciiRuns = Regex.Matches(
+                Encoding.UTF8.GetString(bytes), @"[\p{L}\p{N}\p{P}\p{Zs}\t\r\n]{5,}")
+                .Select(m => Regex.Replace(m.Value, @"[ \t]{2,}", " ").Trim())
+                .Where(v => !string.IsNullOrWhiteSpace(v));
+
+            var text = string.Join(Environment.NewLine,
+                unicodeRuns.Sum(r => r.Length) >= asciiRuns.Sum(r => r.Length)
+                    ? unicodeRuns
+                    : asciiRuns);
+
+            foreach (var page in SplitByLength(text, _ragConfig.MaxChunkingInputCharacters))
+                yield return page;
+        }
+
+        private static async IAsyncEnumerable<string> ExtractTxtPagesAsync(
+            Stream stream,
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            using var reader = new StreamReader(stream, Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true, leaveOpen: false);
+
+            var batch = new StringBuilder();
+            var buffer = new char[4096];
+
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var charsRead = await reader.ReadAsync(buffer, ct);
+                if (charsRead == 0)
+                    break;
+
+                batch.Append(buffer, 0, charsRead);
+
+                if (batch.Length >= 12000)
+                {
+                    yield return batch.ToString();
+                    batch.Clear();
+                }
+            }
+
+            if (batch.Length > 0)
+                yield return batch.ToString();
         }
 
         private static bool IsWordTextEntry(ZipArchiveEntry entry)
         {
             return entry.FullName.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase)
-                || (entry.FullName.StartsWith("word/header", StringComparison.OrdinalIgnoreCase) && entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
-                || (entry.FullName.StartsWith("word/footer", StringComparison.OrdinalIgnoreCase) && entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase));
+                || (entry.FullName.StartsWith("word/header", StringComparison.OrdinalIgnoreCase)
+                    && entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                || (entry.FullName.StartsWith("word/footer", StringComparison.OrdinalIgnoreCase)
+                    && entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase));
         }
 
-        private static string ExtractPrintableRuns(string text, int minRunLength)
+        private static IEnumerable<string> SplitByLength(string text, int maxLength)
         {
-            var runs = Regex.Matches(text, @"[\p{L}\p{N}\p{P}\p{Zs}\t\r\n]{" + minRunLength + @",}")
-                .Select(match => Regex.Replace(match.Value, @"[ \t]{2,}", " ").Trim())
-                .Where(value => !string.IsNullOrWhiteSpace(value));
-
-            return string.Join(Environment.NewLine, runs);
+            for (var i = 0; i < text.Length; i += maxLength)
+                yield return text.Substring(i, Math.Min(maxLength, text.Length - i));
         }
     }
 }

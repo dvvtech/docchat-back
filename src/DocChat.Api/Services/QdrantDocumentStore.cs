@@ -23,7 +23,8 @@ namespace DocChat.Api.Services
             string fileName,
             IReadOnlyList<string> chunks,
             IReadOnlyList<float[]> embeddings,
-            CancellationToken ct)
+            CancellationToken ct,
+            int chunkIndexOffset = 0)
         {
             if (chunks.Count != embeddings.Count)
             {
@@ -40,7 +41,7 @@ namespace DocChat.Api.Services
                 {
                     ["documentId"] = documentId,
                     ["fileName"] = fileName,
-                    ["chunkIndex"] = index,
+                    ["chunkIndex"] = chunkIndexOffset + index,
                     ["text"] = chunk,
                     ["characterCount"] = chunk.Length,
                     ["uploadedAtUtc"] = DateTimeOffset.UtcNow.ToString("O")
