@@ -19,5 +19,13 @@ namespace DocChat.Api.Configuration
         public int MaxChunkCharacters { get; init; } = 1800;
 
         public int MaxChunkingInputCharacters { get; init; } = 12000;
+
+        public int EmbeddingBatchSize { get; init; } = 64;
+
+        public int RetrievalCandidateMultiplier { get; init; } = 4;
+
+        public double MinSimilarityScore { get; init; } = 0.25;
+
+        public int MaxContextCharacters { get; init; } = 12000;
     }
 }

@@ -29,6 +29,29 @@ namespace DocChat.Api.Services
             return embedding.Value.ToFloats().ToArray();
         }
 
+        public async Task<IReadOnlyList<float[]>> GenerateEmbeddingsAsync(
+            IReadOnlyList<string> texts,
+            CancellationToken ct)
+        {
+            if (texts.Count == 0)
+            {
+                return Array.Empty<float[]>();
+            }
+
+            await EnsureInitializedAsync(ct);
+
+            var embeddings = new List<float[]>(texts.Count);
+            foreach (var batch in texts.Chunk(Math.Max(1, _ragConfig.EmbeddingBatchSize)))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var response = await _embeddingClient!.GenerateEmbeddingsAsync(batch, cancellationToken: ct);
+                embeddings.AddRange(response.Value.Select(embedding => embedding.ToFloats().ToArray()));
+            }
+
+            return embeddings;
+        }
+
         private async Task EnsureInitializedAsync(CancellationToken ct)
         {
             if (_initialized) return;

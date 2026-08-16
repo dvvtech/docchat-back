@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using DocChat.Api.Configuration;
 using Microsoft.Extensions.Options;
 using Qdrant.Client;
@@ -33,19 +35,25 @@ namespace DocChat.Api.Services
 
             await EnsureCollectionAsync(ct);
 
-            var points = chunks.Select((chunk, index) => new PointStruct
+            var uploadedAtUtc = DateTimeOffset.UtcNow.ToString("O");
+            var points = chunks.Select((chunk, index) =>
             {
-                Id = new PointId { Uuid = Guid.NewGuid().ToString() },
-                Vectors = embeddings[index],
-                Payload =
+                var chunkIndex = chunkIndexOffset + index;
+
+                return new PointStruct
                 {
-                    ["documentId"] = documentId,
-                    ["fileName"] = fileName,
-                    ["chunkIndex"] = chunkIndexOffset + index,
-                    ["text"] = chunk,
-                    ["characterCount"] = chunk.Length,
-                    ["uploadedAtUtc"] = DateTimeOffset.UtcNow.ToString("O")
-                }
+                    Id = new PointId { Uuid = CreateStablePointId(documentId, chunkIndex).ToString() },
+                    Vectors = embeddings[index],
+                    Payload =
+                    {
+                        ["documentId"] = documentId,
+                        ["fileName"] = fileName,
+                        ["chunkIndex"] = chunkIndex,
+                        ["text"] = chunk,
+                        ["characterCount"] = chunk.Length,
+                        ["uploadedAtUtc"] = uploadedAtUtc
+                    }
+                };
             }).ToArray();
 
             await _qdrantClient.UpsertAsync(_ragConfig.CollectionName, points, cancellationToken: ct);
@@ -80,19 +88,40 @@ namespace DocChat.Api.Services
         {
             await EnsureCollectionAsync(ct);
 
+            var searchLimit = (ulong)Math.Clamp(
+                topK * Math.Max(1, _ragConfig.RetrievalCandidateMultiplier),
+                topK,
+                100);
+
             var results = await _qdrantClient.SearchAsync(
                 _ragConfig.CollectionName,
                 queryVector,
-                limit: (ulong)topK,
+                limit: searchLimit,
                 cancellationToken: ct);
 
-            return results.Select(point => new SearchResult(
+            return results
+                .Where(point => point.Score >= _ragConfig.MinSimilarityScore)
+                .Take(topK)
+                .Select(ToSearchResult)
+                .ToArray();
+        }
+
+        private static SearchResult ToSearchResult(ScoredPoint point)
+        {
+            return new SearchResult(
                 point.Payload["documentId"].StringValue,
                 point.Payload["fileName"].StringValue,
                 (int)point.Payload["chunkIndex"].IntegerValue,
                 point.Payload["text"].StringValue,
                 point.Score
-            )).ToArray();
+            );
+        }
+
+        private static Guid CreateStablePointId(string documentId, int chunkIndex)
+        {
+            var bytes = Encoding.UTF8.GetBytes($"{documentId}:{chunkIndex}");
+            var hash = SHA256.HashData(bytes);
+            return new Guid(hash[..16]);
         }
 
         private async Task EnsureCollectionAsync(CancellationToken ct)

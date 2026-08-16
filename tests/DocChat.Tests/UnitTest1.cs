@@ -5,7 +5,7 @@ namespace DocChat.Tests
 {
     public class UnitTest1
     {
-        [Fact]
+        [Fact(Skip = "Requires a running Qdrant instance on localhost:6334.")]
         public async Task QdrantWriteReadExample()
         {
             var client = new QdrantClient("localhost", 6334);

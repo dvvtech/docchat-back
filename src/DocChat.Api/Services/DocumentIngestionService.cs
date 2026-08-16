@@ -37,6 +37,8 @@ namespace DocChat.Api.Services
             var chunkIndexOffset = 0;
             var allChunks = new List<DocumentChunkDto>();
 
+            await _documentStore.DeleteDocumentAsync(documentId, ct);
+
             await foreach (var textPage in _textExtractor.ExtractTextPagesAsync(file, ct))
             {
                 ct.ThrowIfCancellationRequested();
@@ -50,11 +52,7 @@ namespace DocChat.Api.Services
                 if (chunks.Count == 0)
                     continue;
 
-                var embeddings = new List<float[]>(chunks.Count);
-                foreach (var chunk in chunks)
-                {
-                    embeddings.Add(await _embeddingService.GenerateEmbeddingAsync(chunk, ct));
-                }
+                var embeddings = await _embeddingService.GenerateEmbeddingsAsync(chunks, ct);
 
                 await _documentStore.SaveChunksAsync(
                     documentId, file.FileName, chunks, embeddings, ct, chunkIndexOffset);
