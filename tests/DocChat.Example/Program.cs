@@ -49,15 +49,14 @@ if (!await qdrant.CollectionExistsAsync(collectionName))
 
 var points = chunks.Select((chunk, index) => new PointStruct
 {
-    Id = new PointId { Uuid = Guid.NewGuid().ToString() },
+    Id = new PointId { Uuid = Guid.NewGuid().ToString() },//documentId + ":" + chunkIndex
     Vectors = chunk.Embedding.Vector.ToArray(),
     Payload =
     {
         ["documentId"] = documentId,
         ["chunkIndex"] = index,
-        ["text"] = chunk.Text,
-        ["characterCount"] = chunk.Text.Length,
-        ["uploadedAtUtc"] = DateTimeOffset.UtcNow.ToString("O")
+        ["text"] = chunk.Text,        
+        ["indexedAtUtc"] = DateTimeOffset.UtcNow.ToString("O")
     }
 }).ToArray();
 
@@ -72,7 +71,8 @@ var queryEmbedding = (await embeddingGenerator.GenerateAsync([query])).First().V
 var searchResults = await qdrant.SearchAsync(
     collectionName,
     queryEmbedding,
-    limit: 5);
+    limit: 10,
+    scoreThreshold: 0.7f);//порог релевантности
 
 Console.WriteLine($"Найдено {searchResults.Count} результатов по запросу '{query}':");
 foreach (var result in searchResults)
