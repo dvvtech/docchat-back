@@ -4,6 +4,7 @@
     <Project Path="src/DocChat.Api/DocChat.Api.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/DocChat.Example/DocChat.Example.csproj" Id="cf0bf105-da0f-49c4-acdc-a282fa45a1f0" />
     <Project Path="tests/DocChat.Tests/DocChat.Tests.csproj" />
   </Folder>
 </Solution>
