@@ -64,3 +64,18 @@ var points = chunks.Select((chunk, index) => new PointStruct
 await qdrant.UpsertAsync(collectionName, points);
 
 Console.WriteLine($"Сохранено {points.Length} точек в коллекцию '{collectionName}'.");
+
+// 6. Поиск по документу
+string query = "что искать в документе";
+var queryEmbedding = (await embeddingGenerator.GenerateAsync([query])).First().Vector.ToArray();
+
+var searchResults = await qdrant.SearchAsync(
+    collectionName,
+    queryEmbedding,
+    limit: 5);
+
+Console.WriteLine($"Найдено {searchResults.Count} результатов по запросу '{query}':");
+foreach (var result in searchResults)
+{
+    Console.WriteLine($"  Score={result.Score:F4}: {result.Payload["text"].StringValue}");
+}
