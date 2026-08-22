@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.SemanticKernel" Version="1.80.0" />
+    <PackageReference Include="Qdrant.Client" Version="1.18.1" />
     <PackageReference Include="SemanticChunker.NET" Version="1.5.0" />
   </ItemGroup>
 
