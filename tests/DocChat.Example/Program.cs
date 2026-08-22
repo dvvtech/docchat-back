@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using SemanticChunkerNET;
 
@@ -21,5 +22,5 @@ IList<Chunk> chunks = await semanticChunker.CreateChunksAsync(inputText);
 // 4. Использование полученных чанков
 foreach (var chunk in chunks)
 {
-    Console.WriteLine($"Чанк {chunk.Id}: {chunk.Text.Length} символов, {chunk.Embedding.Count} измерений");
+    Console.WriteLine($"Чанк {chunk.Id}: {chunk.Text.Length} символов, {chunk.Embedding.Vector.Length} измерений");
 }
