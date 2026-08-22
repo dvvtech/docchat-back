@@ -4,7 +4,7 @@ using Microsoft.SemanticKernel;
 using SemanticChunkerNET;
 
 var builder = Kernel.CreateBuilder();
-builder.Services.AddOpenAITextEmbeddingGeneration(
+builder.AddOpenAIEmbeddingGenerator(
     modelId: "text-embedding-3-small", // или ваша модель
     apiKey: "ВАШ_API_КЛЮЧ"
 );
