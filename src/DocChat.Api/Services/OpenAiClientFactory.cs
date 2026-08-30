@@ -3,7 +3,6 @@ using Microsoft.Extensions.Options;
 using OpenAI;
 using System.ClientModel;
 using System.ClientModel.Primitives;
-using System.Net;
 
 namespace DocChat.Api.Services
 {
@@ -26,28 +25,12 @@ namespace DocChat.Api.Services
         public OpenAIClient CreateClient()
         {
             var openAiOptions = new OpenAIClientOptions();
-            if (_proxyConfig.Enabled && !string.IsNullOrWhiteSpace(_proxyConfig.Ip) && !string.IsNullOrWhiteSpace(_proxyConfig.Port))
+            var handler = _proxyConfig.TryCreateHttpHandler(_logger);
+
+            if (handler is not null)
             {
-                var proxyUri = new Uri($"http://{_proxyConfig.Ip}:{_proxyConfig.Port}");
-                var proxy = new WebProxy(proxyUri);
-
-                if (!string.IsNullOrEmpty(_proxyConfig.Login) && !string.IsNullOrEmpty(_proxyConfig.Password))
-                {
-                    proxy.Credentials = new NetworkCredential(_proxyConfig.Login, _proxyConfig.Password);
-                }
-
-                var handler = new HttpClientHandler
-                {
-                    Proxy = proxy,
-                    UseProxy = true,
-                };
-
                 openAiOptions.Transport = new HttpClientPipelineTransport(new HttpClient(handler));
                 _logger.LogInformation("OpenAI client configured with proxy {ProxyIp}:{ProxyPort}", _proxyConfig.Ip, _proxyConfig.Port);
-            }
-            else if (_proxyConfig.Enabled)
-            {
-                _logger.LogWarning("Proxy is enabled, but proxy host or port is empty. OpenAI client will be created without proxy.");
             }
 
             return new OpenAIClient(new ApiKeyCredential(_aiConfig.ApiKey), openAiOptions);

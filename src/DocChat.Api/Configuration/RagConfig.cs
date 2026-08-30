@@ -16,7 +16,7 @@ namespace DocChat.Api.Configuration
 
         public int SemanticChunkerTokenLimit { get; init; } = 512;
 
-        public bool UseReranker { get; init; }
+        public RerankMethod RerankMethod { get; init; }
 
         public string RerankerModel { get; init; } = "gpt-4o-mini";
 

@@ -52,10 +52,7 @@ public sealed class DocumentSearchService : IDocumentSearchService
                 Array.Empty<SearchResultDto>());
         }
 
-        if (_ragConfig.UseReranker)
-        {
-            results = await _reranker.RerankAsync(request.Query, results, ct);
-        }
+        results = await _reranker.RerankAsync(request.Query, results, ct);
 
         var sources = results
             .Take(topK)
