@@ -30,7 +30,7 @@ namespace DocChat.Api.Services
             if (handler is not null)
             {
                 openAiOptions.Transport = new HttpClientPipelineTransport(new HttpClient(handler));
-                _logger.LogInformation("OpenAI client configured with proxy {ProxyIp}:{ProxyPort}", _proxyConfig.Ip, _proxyConfig.Port);
+                _logger.LogInformation("OpenAI client configured with proxy");
             }
 
             return new OpenAIClient(new ApiKeyCredential(_aiConfig.ApiKey), openAiOptions);

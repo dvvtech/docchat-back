@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="ICU4N.Resources" Version="60.1.0-alpha.438" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Qdrant.Client" Version="1.18.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
@@ -20,7 +22,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="data\" />
+    <ProjectReference Include="..\..\src\DocChat.Api\DocChat.Api.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="data\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CopyIcu4nInvariantSatelliteAssembly" AfterTargets="Build">
+    <Copy SourceFiles="$(PkgICU4N_Resources)\lib\netstandard2.0\ICU4N.resources.dll"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(PkgICU4N_Resources)\lib\netstandard2.0\ICU4N.resources.dll')" />
+  </Target>
 
 </Project>

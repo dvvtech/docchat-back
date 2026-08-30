@@ -2,11 +2,9 @@
 {
     public class ProxyConfig
     {
-        public const string SectionName = "ProxySettings";
-        public bool Enabled { get; init; }
-        public string Ip { get; init; } = string.Empty;
-        public string Port { get; init; } = string.Empty;
-        public string Login { get; init; } = string.Empty;
-        public string Password { get; init; } = string.Empty;
+        public const string SectionName = "ProxyConfig";        
+        public string Url { get; init; }
+        public string Login { get; init; }
+        public string Password { get; init; }
     }
 }

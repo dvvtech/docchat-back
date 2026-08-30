@@ -5,25 +5,24 @@ namespace DocChat.Api.Services;
 
 public static class ProxyConfigExtensions
 {
-    public static HttpClientHandler? TryCreateHttpHandler(this ProxyConfig proxy, ILogger logger)
-    {
-        if (!proxy.Enabled)
-        {
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(proxy.Ip) || string.IsNullOrWhiteSpace(proxy.Port))
+    public static HttpClientHandler? TryCreateHttpHandler(this ProxyConfig proxyConfig, ILogger logger)
+    {        
+        if (string.IsNullOrWhiteSpace(proxyConfig.Url))
         {
             logger.LogWarning("Proxy is enabled, but proxy host or port is empty. HttpClient will be created without proxy.");
             return null;
         }
 
-        var webProxy = new WebProxy(new Uri($"http://{proxy.Ip}:{proxy.Port}"));
-
-        if (!string.IsNullOrEmpty(proxy.Login) && !string.IsNullOrEmpty(proxy.Password))
+        var webProxy = new WebProxy
         {
-            webProxy.Credentials = new NetworkCredential(proxy.Login, proxy.Password);
-        }
+            Address = new Uri(proxyConfig.Url),
+            BypassProxyOnLocal = false,
+            UseDefaultCredentials = false,
+            Credentials = (!string.IsNullOrEmpty(proxyConfig.Login) &&
+                                       !string.IsNullOrEmpty(proxyConfig.Password))
+                            ? new NetworkCredential(proxyConfig.Login, proxyConfig.Password)
+                            : null
+        };
 
         return new HttpClientHandler { Proxy = webProxy, UseProxy = true };
     }
