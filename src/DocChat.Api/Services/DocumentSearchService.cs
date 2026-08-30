@@ -1,38 +1,35 @@
 using System.Text;
 using DocChat.Api.Configuration;
 using DocChat.Api.Models.Documents;
+using DocChat.Api.Services.Abstractions;
 using Microsoft.Extensions.Options;
 using OpenAI.Chat;
 
 namespace DocChat.Api.Services;
 
-public sealed class DocumentSearchService
+public sealed class DocumentSearchService : IDocumentSearchService
 {
-    private readonly ILogger<DocumentSearchService> _logger;
-    private readonly SemaphoreSlim _initLock = new(1, 1);
-    private ChatClient? _chatClient;
-    private bool _initialized;
-
     private readonly AiConfig _aiConfig;
-    private readonly OpenAiClientFactory _openAiClientFactory;
-    private readonly DocumentEmbeddingService _embeddingService;
-    private readonly QdrantDocumentStore _documentStore;
     private readonly RagConfig _ragConfig;
+    private readonly IEmbeddingService _embeddingService;
+    private readonly IDocumentVectorStore _documentStore;
+    private readonly IDocumentReranker _reranker;
+    private readonly ChatClient _chatClient;
 
     public DocumentSearchService(
         IOptions<AiConfig> aiConfig,
         IOptions<RagConfig> ragConfig,
         OpenAiClientFactory openAiClientFactory,
-        DocumentEmbeddingService embeddingService,
-        QdrantDocumentStore documentStore,
-        ILogger<DocumentSearchService> logger)
+        IEmbeddingService embeddingService,
+        IDocumentVectorStore documentStore,
+        IDocumentReranker reranker)
     {
         _aiConfig = aiConfig.Value;
         _ragConfig = ragConfig.Value;
-        _openAiClientFactory = openAiClientFactory;
         _embeddingService = embeddingService;
         _documentStore = documentStore;
-        _logger = logger;
+        _reranker = reranker;
+        _chatClient = openAiClientFactory.CreateClient().GetChatClient(_aiConfig.Model);
     }
 
     public async Task<SearchResponse> SearchAsync(SearchRequest request, CancellationToken ct)
@@ -41,7 +38,12 @@ public sealed class DocumentSearchService
 
         var queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(request.Query, ct);
 
-        var results = await _documentStore.SearchAsync(queryEmbedding, topK, ct);
+        var candidateLimit = Math.Clamp(
+            topK * Math.Max(1, _ragConfig.RetrievalCandidateMultiplier),
+            topK,
+            100);
+
+        var results = await _documentStore.SearchAsync(queryEmbedding, candidateLimit, ct);
 
         if (results.Count == 0)
         {
@@ -50,13 +52,21 @@ public sealed class DocumentSearchService
                 Array.Empty<SearchResultDto>());
         }
 
-        var sources = results.Select(r => new SearchResultDto(
-            r.DocumentId,
-            r.FileName,
-            r.ChunkIndex,
-            r.Text,
-            r.Score
-        )).ToArray();
+        if (_ragConfig.UseReranker)
+        {
+            results = await _reranker.RerankAsync(request.Query, results, ct);
+        }
+
+        var sources = results
+            .Take(topK)
+            .Select(r => new SearchResultDto(
+                r.DocumentId,
+                r.FileName,
+                r.ChunkIndex,
+                r.Text,
+                r.Score
+            ))
+            .ToArray();
 
         var context = BuildContext(sources);
 
@@ -72,28 +82,16 @@ public sealed class DocumentSearchService
             Context:
             """ + context;
 
-        await EnsureInitializedAsync(ct);
-
         var messages = new List<ChatMessage>
         {
             new SystemChatMessage(systemPrompt),
             new UserChatMessage(request.Query)
         };
 
-        ChatCompletion completion;
-        try
-        {
-            var options = new ChatCompletionOptions { Temperature = 0f };
-            var result = await _chatClient!.CompleteChatAsync(messages, options, ct);
-            completion = result.Value;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "OpenAI API error during search");
-            throw;
-        }
+        var options = new ChatCompletionOptions { Temperature = 0f };
+        var completion = await _chatClient.CompleteChatAsync(messages, options, ct);
 
-        var answer = completion.Content.FirstOrDefault()?.Text
+        var answer = completion.Value.Content.FirstOrDefault()?.Text
             ?? "The model returned an empty answer.";
 
         return new SearchResponse(answer, sources);
@@ -132,31 +130,5 @@ public sealed class DocumentSearchService
         }
 
         return builder.ToString();
-    }
-
-    private async Task EnsureInitializedAsync(CancellationToken ct)
-    {
-        if (_initialized) return;
-
-        await _initLock.WaitAsync(ct);
-        try
-        {
-            if (_initialized) return;
-
-            var openAi = _openAiClientFactory.CreateClient();
-            _chatClient = openAi.GetChatClient(_aiConfig.Model);
-
-            _initialized = true;
-            _logger.LogInformation("DocumentSearchService initialized");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to initialize DocumentSearchService");
-            throw;
-        }
-        finally
-        {
-            _initLock.Release();
-        }
     }
 }

@@ -1,5 +1,7 @@
+using DocChat.Api.Exceptions;
+using DocChat.Api.Models;
 using DocChat.Api.Models.Documents;
-using DocChat.Api.Services;
+using DocChat.Api.Services.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DocChat.Api.Controllers
@@ -8,98 +10,74 @@ namespace DocChat.Api.Controllers
     [Route("documents")]
     public sealed class DocumentsController : ControllerBase
     {
-    private readonly DocumentIngestionService _documentIngestionService;
-    private readonly DocumentSearchService _documentSearchService;
-    private readonly QdrantDocumentStore _documentStore;
+        private readonly IDocumentIngestionService _documentIngestionService;
+        private readonly IDocumentSearchService _documentSearchService;
+        private readonly IDocumentVectorStore _documentStore;
 
-    public DocumentsController(
-        DocumentIngestionService documentIngestionService,
-        DocumentSearchService documentSearchService,
-        QdrantDocumentStore documentStore)
-    {
-        _documentIngestionService = documentIngestionService;
-        _documentSearchService = documentSearchService;
-        _documentStore = documentStore;
-    }
+        public DocumentsController(
+            IDocumentIngestionService documentIngestionService,
+            IDocumentSearchService documentSearchService,
+            IDocumentVectorStore documentStore)
+        {
+            _documentIngestionService = documentIngestionService;
+            _documentSearchService = documentSearchService;
+            _documentStore = documentStore;
+        }
 
         [HttpPost("upload")]
         [Consumes("multipart/form-data")]
         [ProducesResponseType(typeof(DocumentUploadResponse), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status415UnsupportedMediaType)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status422UnprocessableEntity)]
         public async Task<ActionResult<DocumentUploadResponse>> Upload(
-            [FromForm] IFormFile? file,
-            [FromForm] string? documentId,
+            [FromForm] UploadDocumentRequest? request,
             CancellationToken cancellationToken)
         {
-            if (file is null)
+            if (string.IsNullOrWhiteSpace(request?.DocumentId))
             {
-                return BadRequest(new { error = "File is required." });
+                throw new ValidationException("Document ID is required.");
             }
 
-            if (string.IsNullOrWhiteSpace(documentId))
+            if (request.File is null || request.File.Length == 0)
             {
-                return BadRequest(new { error = "Document ID is required." });
+                throw new ValidationException("File is required.");
             }
 
-            try
-            {
-                var response = await _documentIngestionService.IngestAsync(file, documentId, cancellationToken);
-                return Ok(response);
-            }
-            catch (NotSupportedException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
+            var response = await _documentIngestionService.IngestAsync(request.File, request.DocumentId, cancellationToken);
+            return Ok(response);
         }
 
         [HttpPost("search")]
         [ProducesResponseType(typeof(SearchResponse), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<SearchResponse>> Search(
             [FromBody] SearchRequest request,
             CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(request?.Query))
             {
-                return BadRequest(new { error = "Query is required." });
+                throw new ValidationException("Query is required.");
             }
 
-            try
-            {
-                var response = await _documentSearchService.SearchAsync(request, cancellationToken);
-                return Ok(response);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
+            var response = await _documentSearchService.SearchAsync(request, cancellationToken);
+            return Ok(response);
         }
 
         [HttpDelete("{documentId}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult> Delete(
             string documentId,
             CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(documentId))
             {
-                return BadRequest(new { error = "Document ID is required." });
+                throw new ValidationException("Document ID is required.");
             }
 
-            try
-            {
-                await _documentStore.DeleteDocumentAsync(documentId, cancellationToken);
-                return Ok(new { deleted = true });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
+            await _documentStore.DeleteDocumentAsync(documentId, cancellationToken);
+            return Ok(new { deleted = true });
         }
     }
 }

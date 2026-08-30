@@ -4,12 +4,14 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using System.IO.Compression;
 using DocChat.Api.Configuration;
+using DocChat.Api.Exceptions;
+using DocChat.Api.Services.Abstractions;
 using Microsoft.Extensions.Options;
 using UglyToad.PdfPig;
 
 namespace DocChat.Api.Services
 {
-    public sealed class DocumentTextExtractor
+    public sealed class DocumentTextExtractor : IDocumentTextExtractor
     {
         private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -33,7 +35,7 @@ namespace DocChat.Api.Services
             var extension = Path.GetExtension(file.FileName);
             if (!SupportedExtensions.Contains(extension))
             {
-                throw new NotSupportedException($"File extension '{extension}' is not supported.");
+                throw new UnsupportedFileTypeException($"File extension '{extension}' is not supported.");
             }
 
             await using var stream = file.OpenReadStream();
